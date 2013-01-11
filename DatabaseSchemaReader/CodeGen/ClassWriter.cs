@@ -123,6 +123,12 @@ namespace DatabaseSchemaReader.CodeGen
                 WriteColumn(column);
             }
 
+						// KL: Writing out all foreign keys on their own. Needed for composite foreign keys.
+						foreach (var fKey in _table.ForeignKeys)
+						{
+							WriteForeignKey(fKey);
+						}
+
             WriteForeignKeyCollections();
 
             if (!_table.HasCompositeKey && _codeWriterSettings.CodeTarget != CodeTarget.PocoRiaServices)
@@ -131,6 +137,47 @@ namespace DatabaseSchemaReader.CodeGen
                 overrider.AddOverrides();
             }
         }
+
+				/// <summary>
+				/// KL:
+				/// Similar to WriteColumn. Will send the appropriate dataType and propertyName to
+				/// _cb.AppendAutomaticProperty to be written.
+				/// 
+				/// This method was needed to support composite foreign keys.
+				/// </summary>
+				/// <param name="fKey"></param>
+				private void WriteForeignKey(DatabaseConstraint fKey)
+				{
+					var propertyName = "Unknown";
+					
+					// get the reference table
+					var refTable = _table.DatabaseSchema.FindTableByName(fKey.RefersToTable);
+
+					// get the parent table
+					var parentTable = _table.DatabaseSchema.FindTableByName(fKey.TableName);
+
+					if (refTable != null)
+						propertyName = refTable.NetName;
+
+					var dataType = propertyName;
+
+					// Check whether the referenced table is used in any other key. This ensures that the property names
+					// are unique.
+					if (parentTable.ForeignKeys.Count(x => x.RefersToTable == fKey.RefersToTable) > 1)
+					{
+						// Append the key name to the property name. In the event of multiple foreign keys to the same table
+						// This will give the consumer context.
+						propertyName += fKey.Name;
+					}
+
+					// Ensures that property name cannot be the same as class name
+					if (propertyName == parentTable.NetName)
+					{
+						propertyName += "Key";
+					}
+
+					_cb.AppendAutomaticProperty(dataType, propertyName);
+				}
 
         private bool IsCodeFirst()
         {
@@ -231,10 +278,19 @@ namespace DatabaseSchemaReader.CodeGen
         private void WriteColumn(DatabaseColumn column)
         {
             var propertyName = column.NetName;
+						// KL: Ensures that property name doesn't match class name
+						if (propertyName == column.Table.NetName)
+						{
+							propertyName = string.Format("{0}Column", propertyName);
+						}
             var dataType = _dataTypeWriter.Write(column);
             var isFk = column.IsForeignKey && column.ForeignKeyTable != null;
+
             if (isFk)
             {
+							//KL: Returning if this is a foreign key. These should be written in a separate step.
+							return;
+
                 if (IsEntityFramework() && (column.IsPrimaryKey || _codeWriterSettings.UseForeignKeyIdProperties))
                 {
                     //if it's a primary key AND foreign key, CF requires a scalar property
