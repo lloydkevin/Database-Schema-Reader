@@ -289,7 +289,8 @@ namespace DatabaseSchemaReader.CodeGen
             if (isFk)
             {
 							//KL: Returning if this is a foreign key. These should be written in a separate step.
-							return;
+							if (IsNHibernate())
+								return;
 
                 if (IsEntityFramework() && (column.IsPrimaryKey || _codeWriterSettings.UseForeignKeyIdProperties))
                 {
